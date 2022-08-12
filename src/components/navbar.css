@@ -1,0 +1,23 @@
+.navbar-brand{
+    color: rgb(75, 184, 184);
+    font-family: 'Dekko';
+    font-size: 29px;
+       
+}
+
+.navbar-brand:hover{
+    font-weight: bolder;
+    color: rgb(75, 184, 184);
+}
+
+
+.nav-link {
+    font-family: 'Dekko';
+    font-size: 18px;
+    color: rgb(75, 184, 184);
+}
+.nav-link:hover{
+    font-weight: bold;
+    color: rgb(75, 184, 184);
+
+}
