@@ -1,25 +1,25 @@
-import smartpy as sp
+# Contract Address : KT1WcMzwxfZAskUYZfbFejBffRMciV2PAJDr
 
+import smartpy as sp
 
 class Aztec(sp.Contract):
 
-    def __init__(self, admin):
+
+    def __init__(self, admin, initialRate, initialDuration):
 
         self.init(
-            admin = sp.test_account("Admin").address ,
+            admin=admin,
             collateral=sp.mutez(0),
-            lend_ledger= {} ,
-            # borrow_ledger = {},
-            lending_rate = sp.nat(0),
-            borrow_rate = sp.nat(0)
-
+            ledger={},
+            rate=initialRate,
+            duration=initialDuration,
         )
 
     # Admin-only entrypoints
 
     @sp.entry_point
     def delegate(self, public_key_hash):
- 
+  
         sp.verify(sp.sender == self.data.admin)
         sp.verify(sp.amount == sp.mutez(0))
         sp.verify(sp.sender == sp.to_address(sp.implicit_account(public_key_hash)))
@@ -40,58 +40,47 @@ class Aztec(sp.Contract):
         sp.send(sp.sender, amount)
 
     @sp.entry_point
-    def set_offer(self):
- 
+    def set_offer(self, rate, duration):
+
         sp.verify(sp.sender == self.data.admin)
         sp.verify(sp.amount == sp.mutez(0))
-
-        self.data.lending_rate = ( sp.nat(8) + sp.as_nat(sp.now - sp.timestamp(0)) % sp.nat(5) ) // sp.nat(7)
-        self.data.borrow_rate = ( sp.nat(15) + sp.as_nat(sp.now - sp.timestamp(0)) % sp.nat(5) ) // sp.nat(10)
-
+        self.data.rate = rate
+        self.data.duration = duration
 
     # Permissionless entrypoints
 
     @sp.entry_point
-    def deposit(self):
-        """Deposit tez. The current offer has to be repeated in the parameters.
+    def deposit(self, duration):
+  
+        sp.verify(self.data.duration <= duration)
+        sp.verify(~self.data.ledger.contains(sp.sender))
 
-        Args:
-            rate (sp.TNat): Basis points to compute the interest.
-            duration (sp.TNat): Number of days before a deposit can be withdrawn.
-        """
-        sp.verify(~self.data.lend_ledger.contains(sp.sender), "Alreade have an asset")
 
+        self.data.collateral += sp.amount 
         # Compute interest to be paid.
-        interest = sp.split_tokens(sp.amount, self.data.lending_rate, 1)
-        sp.if self.data.collateral >interest :
-            self.data.collateral -= interest
+        interest = sp.split_tokens(sp.amount, self.data.rate, 100)
 
-        newamount = sp.amount + interest
-
-        # Record the payment to be made.
-        self.data.lend_ledger[sp.sender] = sp.record(
-            amount= newamount
-            # due=sp.now.add_days(self.data.duration),
+        self.data.ledger[sp.sender] = sp.record(
+            amount=sp.amount + interest,
+            due=sp.now.add_days(duration),
         )
 
-    # @sp.entry_point
-    # def withdraw(self):
-    #     """Withdraw tez at maturity."""
-    #     sp.verify(sp.amount == sp.mutez(0))
-    #     entry = self.data.lend_ledger[sp.sender]
-    #     sp.send(sp.sender, entry.amount)
-    #     del self.data.lend_ledger[sp.sender]
 
+    @sp.entry_point
+    def withdraw(self):
+        sp.verify(sp.amount == sp.mutez(0))
+        entry = self.data.ledger[sp.sender]
+        sp.verify(sp.now >= entry.due , "Deposit Not Matured")
+        sp.send(sp.sender, entry.amount)
+        del self.data.ledger[sp.sender]
 
+    
 if "templates" not in __name__:
 
-    @sp.add_test(name="Baking")
+    @sp.add_test(name="Aztec")
     def test():
-        aak= sp.test_account("aak")
-        alice= sp.test_account("alice")
-
         admin = sp.test_account("Admin")
-
+        Bob = sp.test_account("Bob")
         voting_powers = {
             admin.public_key_hash: 0,
         }
@@ -99,21 +88,11 @@ if "templates" not in __name__:
         scenario = sp.test_scenario()
         scenario.h1("Baking Swap")
 
-        bs = Aztec(admin.address)
-        scenario += bs
+        c = Aztec(admin.address, 12, 30)
+        scenario += c
 
-        bs.delegate(admin.public_key_hash).run(sender=admin, voting_powers=voting_powers)
-
-        scenario +=bs.set_offer().run(
-        amount = sp.tez(0),
-        sender = admin
-    )
-        scenario += bs.deposit().run(
-        amount = sp.tez(10),
-        sender = aak
-    )
-        scenario += bs.deposit().run(
-        amount = sp.tez(10),
-        sender = alice
-    )
+        c.delegate(admin.public_key_hash).run(sender=admin, voting_powers=voting_powers)
+        c.deposit(sp.int(365)).run(
+        amount = sp.tez(2), sender = Bob )
+        # c.withdraw().run(sender = Bob)
 
